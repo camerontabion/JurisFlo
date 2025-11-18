@@ -1,4 +1,4 @@
-import { listUIMessages, saveMessage } from '@convex-dev/agent'
+import { listUIMessages } from '@convex-dev/agent'
 import { paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 import { components, internal } from './_generated/api'
@@ -11,7 +11,7 @@ export const sendMessage = mutation({
   args: { prompt: v.string(), threadId: v.string() },
   handler: async (ctx, { prompt, threadId }) => {
     await authComponent.getAuthUser(ctx)
-    const { messageId } = await saveMessage(ctx, components.agent, { threadId, prompt })
+    const { messageId } = await documentAgent.saveMessage(ctx, { threadId, prompt })
     await ctx.scheduler.runAfter(0, internal.chat.generateResponse, { threadId, promptMessageId: messageId })
   },
 })

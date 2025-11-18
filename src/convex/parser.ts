@@ -41,11 +41,24 @@ export const extractFieldsFromDocument = internalAction({
       status: 'parsing' as const,
     })
 
+    // Create a thread FIRST to properly track tool calls and results
+    // This ensures tool calls and results are properly paired in the conversation history
+    const { thread, threadId } = await documentAgent.createThread(ctx, {
+      title: `Document: ${document.fileName || 'Untitled'}`,
+      summary: `Parsing legal document to extract placeholders`,
+      userId: document.uploadedById,
+    })
+
+    // Update the document with the thread id early so it's available
+    await ctx.runMutation(internal.document.updateDocumentThread, {
+      documentId: args.documentId,
+      threadId,
+    })
+
     // Use LLM to extract structured company data directly from the document file
     // TODO: add support for looking at other documents to fill in the missing data
-    await documentAgent.generateText(
-      ctx,
-      { userId: document.uploadedById },
+    // Use the thread to ensure tool calls and results are properly tracked
+    await thread.generateText(
       {
         prompt: `Parse this legal document and differentiate between the template text and dynamic placeholders that need to be filled out by a lawyer.
 
@@ -62,29 +75,19 @@ Generate a title (usually related to the file name (${document.fileName}) or the
 The document id is ${args.documentId}.
 `,
       },
+      {
+        storageOptions: { saveMessages: 'all' },
+        contextOptions: {
+          excludeToolMessages: false,
+          searchOptions: { limit: 100, textSearch: true },
+          searchOtherThreads: true,
+        },
+      },
     )
 
     // get the new document with the missing data
     const newDocument = await ctx.runQuery(internal.document.internalGetDocument, { documentId: args.documentId })
     if (!newDocument) throw new Error('Document not found')
-
-    // Create a thread for the document filling process
-    const { thread, threadId } = await documentAgent.createThread(ctx, {
-      title: `Document: ${newDocument.title || 'Untitled'}`,
-      summary: `Processing legal document with ${newDocument.data?.length || 0} placeholders`,
-    })
-
-    // Update the document with the thread id
-    await ctx.runMutation(internal.document.updateDocumentThread, {
-      documentId: args.documentId,
-      threadId,
-    })
-
-    // Update the document status to review
-    await ctx.runMutation(internal.document.updateDocumentStatus, {
-      documentId: args.documentId,
-      status: 'review' as const,
-    })
 
     // Generate initial response from the thread
     await thread.generateText(
@@ -95,7 +98,7 @@ The document id is ${newDocument._id}.
 
 Format the response as follows and start with only the first placeholder:
 <Conversational Introduction to the process>
-<Conversational Question>
+<Placeholder request in the form of a question, do not include the placeholder label in the question.>
 `,
       },
       {
@@ -107,5 +110,11 @@ Format the response as follows and start with only the first placeholder:
         },
       },
     )
+
+    // Update the document status to review
+    await ctx.runMutation(internal.document.updateDocumentStatus, {
+      documentId: args.documentId,
+      status: 'review' as const,
+    })
   },
 })

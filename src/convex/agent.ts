@@ -11,7 +11,7 @@ const agentDefaults = {
 
 // document agent creator
 export const documentAgent = new Agent(components.agent, {
-  name: `Document Processing Agent`,
+  name: `Legal Document Processing Agent`,
   instructions: `You are a legal document processing assistant. Your role is to:
 1. Extract structured data from legal documents for company records
 2. Identify placeholders in legal document templates
