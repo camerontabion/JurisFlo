@@ -20,7 +20,8 @@ export const sendMessage = mutation({
 export const generateResponse = internalAction({
   args: { promptMessageId: v.string(), threadId: v.string() },
   handler: async (ctx, { promptMessageId, threadId }) => {
-    await documentAgent.generateText(ctx, { threadId }, { promptMessageId })
+    const { thread } = await documentAgent.continueThread(ctx, { threadId })
+    await thread.generateText({ promptMessageId })
   },
 })
 

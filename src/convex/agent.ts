@@ -5,7 +5,7 @@ import { components, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 
 const agentDefaults = {
-  languageModel: openai.chat('gpt-4o-mini'),
+  languageModel: openai.chat('gpt-4o'),
   textEmbeddingModel: openai.embedding('text-embedding-3-small'),
 }
 

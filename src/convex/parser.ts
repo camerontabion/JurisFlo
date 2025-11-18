@@ -92,14 +92,14 @@ The document id is ${args.documentId}.
     // Generate initial response from the thread
     await thread.generateText(
       {
-        prompt: `Ask the user to fill in the missing data for the document.
+        prompt: `Ask the user to fill in the missing data for the document. Start with just the first placeholder.
 The placeholders are: ${newDocument.data?.map((p: { label: string; description: string; value?: string }) => `- ${p.label}: ${p.description} ${p.value ? `(Value: ${p.value})` : ''}`).join('\n')}
 The document id is ${newDocument._id}.
 
-Format the response as follows and start with only the first placeholder:
-<Conversational Introduction to the process>
-<Placeholder request in the form of a question, do not include the placeholder label in the question.>
-`,
+Rules for the response:
+- Phrase the response as a question about the missing data to the user.
+- Respond concisely and to the point. Remove any fluff or extra words.
+- Do not include the placeholder label in the question.`,
       },
       {
         storageOptions: { saveMessages: 'all' },
