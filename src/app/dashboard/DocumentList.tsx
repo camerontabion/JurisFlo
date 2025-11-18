@@ -2,7 +2,18 @@
 
 import { useUIMessages } from '@convex-dev/agent/react'
 import { useMutation, useQuery } from 'convex/react'
-import { AlertCircle, CheckCircle2, FileText, Loader2, MessageSquare, Send, Trash, XCircle } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Download,
+  Edit,
+  FileText,
+  Loader2,
+  MessageSquare,
+  Send,
+  Trash,
+  XCircle,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertDialog,
@@ -95,7 +106,7 @@ export default function DocumentList() {
                   type="button"
                   onClick={() => setSelectedDocumentId(document._id)}
                   className="group w-full text-left"
-                  disabled={!document.threadId}
+                  disabled={document.status !== 'review'}
                 >
                   <div className="flex items-center gap-4 rounded-lg border bg-card p-4 transition-colors not-group-disabled:hover:cursor-pointer not-group-disabled:hover:bg-accent">
                     <div className="min-w-0 flex-1">
@@ -130,13 +141,16 @@ export default function DocumentList() {
           </div>
         )}
       </CardContent>
-      {selectedDocument?.threadId && (
-        <DocumentSheet
-          document={selectedDocument}
-          threadId={selectedDocument.threadId}
-          setSelectedDocumentId={setSelectedDocumentId}
-        />
-      )}
+      {selectedDocument?.threadId &&
+        (selectedDocument?.status === 'review' ||
+          selectedDocument?.status === 'completed' ||
+          selectedDocument?.status === 'error') && (
+          <DocumentSheet
+            document={selectedDocument}
+            threadId={selectedDocument.threadId}
+            setSelectedDocumentId={setSelectedDocumentId}
+          />
+        )}
     </Card>
   )
 }
@@ -320,84 +334,158 @@ function DocumentSheet({
     scrollToBottom(true)
   }
 
+  const displayMessages = messages.slice(3)
+  const hasMessages = displayMessages.length > 0
+
   return (
     <Sheet open={document._id !== null} onOpenChange={open => !open && setSelectedDocumentId(null)}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle className="wrap-break-word">{document.title || document.fileName || 'Document Chat'}</SheetTitle>
-          <SheetDescription>Chat with the AI agent to fill in placeholders for this document</SheetDescription>
-          {document._id && (
-            <DeleteDocumentButton documentId={document._id} onDelete={() => setSelectedDocumentId(null)} />
-          )}
-        </SheetHeader>
-
-        <div className="flex flex-1 flex-col gap-4 overflow-hidden p-4">
-          {/* Chat Messages */}
-          <div ref={messagesContainerRef} className="flex-1 space-y-4 overflow-y-auto">
-            {/* Load More Button / Loading Indicator */}
-            {isScrolledToBottom && (
-              <div className="flex justify-center py-2">
-                {status === 'CanLoadMore' && (
-                  <Button variant="outline" size="sm" onClick={() => loadMore(10)}>
-                    Load More
-                  </Button>
-                )}
-                {(status === 'LoadingMore' || status === 'LoadingFirstPage') && (
-                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                    <Loader2 className="size-4 animate-spin" />
-                    <span>{status === 'LoadingMore' ? 'Loading more messages...' : 'Loading messages...'}</span>
-                  </div>
-                )}
+      <SheetContent side="right" className="flex w-full flex-col p-0 sm:max-w-lg">
+        <SheetHeader className="border-b px-6 py-4 pr-14">
+          <div className="space-y-3">
+            <div>
+              <SheetTitle className="wrap-break-word text-lg">
+                {document.title || document.fileName || 'Document Chat'}
+              </SheetTitle>
+              <SheetDescription className="mt-1.5">
+                Chat with the AI agent to fill in placeholders for this document
+              </SheetDescription>
+            </div>
+            {document._id && (
+              <div className="flex items-center gap-2">
+                <DocumentActionButtons document={document} onDelete={() => setSelectedDocumentId(null)} />
               </div>
             )}
-            {messages.slice(1).map((message, index) => (
-              <div key={index} className={cn('flex gap-3', message.role === 'user' ? 'justify-end' : 'justify-start')}>
-                {message.role === 'assistant' && (
-                  <div className="shrink-0">
-                    <div className="flex size-8 items-center justify-center rounded-full bg-primary/10">
-                      <MessageSquare className="size-4 text-primary" />
-                    </div>
-                  </div>
-                )}
-                <div
-                  className={cn(
-                    'max-w-[80%] rounded-lg px-4 py-2',
-                    message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-                  )}
-                >
-                  {message.text ? (
-                    <p className="whitespace-pre-wrap text-sm">{message.text}</p>
-                  ) : (
-                    <p className="animate-pulse whitespace-pre-wrap text-sm">...</p>
-                  )}
-                </div>
-                {message.role === 'user' && (
-                  <div className="shrink-0">
-                    <div className="flex size-8 items-center justify-center rounded-full bg-primary">
-                      <span className="font-medium text-primary-foreground text-xs">You</span>
-                    </div>
-                  </div>
-                )}
+          </div>
+        </SheetHeader>
+
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Chat Messages */}
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-6">
+            {/* Load More Button / Loading Indicator at Top */}
+            {status === 'CanLoadMore' && (
+              <div className="mb-4 flex justify-center">
+                <Button variant="outline" size="sm" onClick={() => loadMore(10)}>
+                  Load More Messages
+                </Button>
               </div>
-            ))}
+            )}
+            {(status === 'LoadingMore' || status === 'LoadingFirstPage') && (
+              <div className="mb-4 flex items-center justify-center gap-2 text-muted-foreground text-sm">
+                <Loader2 className="size-4 animate-spin" />
+                <span>{status === 'LoadingMore' ? 'Loading more messages...' : 'Loading messages...'}</span>
+              </div>
+            )}
+
+            {!hasMessages && status !== 'LoadingFirstPage' && (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-center">
+                  <MessageSquare className="mx-auto mb-3 size-12 text-muted-foreground/50" />
+                  <p className="text-muted-foreground text-sm">No messages yet. Start a conversation below.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {displayMessages.map((message, index) => {
+                const messageId = message.id || `message-${index}`
+                return (
+                  <div
+                    key={messageId}
+                    className={cn('flex gap-3', message.role === 'user' ? 'justify-end' : 'justify-start')}
+                  >
+                    {message.role === 'assistant' && (
+                      <div className="shrink-0">
+                        <div className="flex size-8 items-center justify-center rounded-full bg-primary/10">
+                          <MessageSquare className="size-4 text-primary" />
+                        </div>
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        'max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm',
+                        message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
+                      )}
+                    >
+                      {message.text ? (
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</p>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <div className="size-1.5 animate-pulse rounded-full bg-current" />
+                          <div className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:0.2s]" />
+                          <div className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:0.4s]" />
+                        </div>
+                      )}
+                    </div>
+                    {message.role === 'user' && (
+                      <div className="shrink-0">
+                        <div className="flex size-8 items-center justify-center rounded-full bg-primary">
+                          <span className="font-medium text-primary-foreground text-xs">You</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Chat Input */}
-          <form onSubmit={handleSendMessage} className="flex gap-2 border-t pt-4">
-            <Input
-              value={chatMessage}
-              onChange={e => setChatMessage(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1"
-            />
-            <Button type="submit" size="icon" disabled={!chatMessage.trim()}>
-              <Send className="size-4" />
-              <span className="sr-only">Send message</span>
-            </Button>
-          </form>
+          <div className="border-t bg-background px-4 py-4">
+            <form onSubmit={handleSendMessage} className="flex gap-2">
+              <Input
+                value={chatMessage}
+                onChange={e => setChatMessage(e.target.value)}
+                placeholder="Type your message..."
+                className="flex-1"
+                disabled={status === 'LoadingFirstPage'}
+              />
+              <Button type="submit" size="icon" disabled={!chatMessage.trim() || status === 'LoadingFirstPage'}>
+                <Send className="size-4" />
+                <span className="sr-only">Send message</span>
+              </Button>
+            </form>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function DocumentActionButtons({ document, onDelete }: { document: Doc<'document'>; onDelete: () => void }) {
+  const handleDownload = () => {
+    // TODO: Implement download functionality
+    console.log('Download document:', document._id)
+  }
+
+  const handleEditTitle = () => {
+    // TODO: Implement edit title functionality
+    console.log('Edit title for document:', document._id)
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="text-muted-foreground hover:text-foreground"
+        onClick={handleDownload}
+        title="Download document"
+      >
+        <Download className="size-4" />
+        <span className="sr-only">Download document</span>
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="text-muted-foreground hover:text-foreground"
+        onClick={handleEditTitle}
+        title="Edit title"
+      >
+        <Edit className="size-4" />
+        <span className="sr-only">Edit title</span>
+      </Button>
+      <DeleteDocumentButton documentId={document._id} onDelete={onDelete} />
+    </div>
   )
 }
 
@@ -408,15 +496,22 @@ function DeleteDocumentButton({ documentId, onDelete }: { documentId: Id<'docume
   return (
     <AlertDialog open={isDeleting} onOpenChange={setIsDeleting}>
       <AlertDialogTrigger asChild>
-        <Button variant="outline" onClick={() => setIsDeleting(true)}>
-          Delete <Trash className="size-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-destructive"
+          onClick={() => setIsDeleting(true)}
+        >
+          <Trash className="size-4" />
+          <span className="sr-only">Delete document</span>
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete Document</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete this document? This action cannot be undone.
+            Are you sure you want to delete this document? This action cannot be undone and all associated data will be
+            permanently removed.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -428,6 +523,7 @@ function DeleteDocumentButton({ documentId, onDelete }: { documentId: Id<'docume
             onClick={() => {
               scheduleDocumentDeletion({ documentId })
               onDelete()
+              setIsDeleting(false)
             }}
           >
             Delete
