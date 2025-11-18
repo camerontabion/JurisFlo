@@ -11,6 +11,7 @@
   },
   "formatter": {
     "enabled": true,
+    "formatWithErrors": true,
     "indentStyle": "space",
     "indentWidth": 2
   },
@@ -19,7 +20,37 @@
     "rules": {
       "recommended": true,
       "suspicious": {
+        "noExplicitAny": "off",
+        "noArrayIndexKey": "off",
         "noUnknownAtRules": "off"
+      },
+      "nursery": {
+        "useSortedClasses": {
+          "level": "error",
+          "fix": "safe",
+          "options": {
+            "functions": ["clsx", "cva", "cn"]
+          }
+        }
+      },
+      "style": {
+        "useImportType": {
+          "level": "warn",
+          "fix": "safe"
+        }
+      },
+      "correctness": {
+        "noChildrenProp": "off",
+        "noUnusedImports": {
+          "level": "warn",
+          "fix": "safe"
+        }
+      },
+      "complexity": {
+        "noBannedTypes": {
+          "level": "warn",
+          "fix": "safe"
+        }
       }
     },
     "domains": {
@@ -32,6 +63,15 @@
       "source": {
         "organizeImports": "on"
       }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "arrowParentheses": "asNeeded",
+      "indentStyle": "space",
+      "lineWidth": 120
     }
   }
 }
