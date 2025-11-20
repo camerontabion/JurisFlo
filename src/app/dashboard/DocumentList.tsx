@@ -1,5 +1,6 @@
 'use client'
 
+import { useForm } from '@tanstack/react-form'
 import { useMutation, useQuery } from 'convex/react'
 import {
   AlertCircle,
@@ -13,7 +14,7 @@ import {
   Trash,
   XCircle,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -25,11 +26,23 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api } from '@/convex/_generated/api'
 import type { Doc, Id } from '@/convex/_generated/dataModel'
 import { cn } from '@/lib/utils'
+import CompanyDataSheet from './CompanyDataSheet'
 import DocumentChat from './DocumentChat'
+import DocumentDataSheet from './DocumentDataSheet'
 
 type DocumentStatus = 'uploaded' | 'parsing' | 'review' | 'completed' | 'error'
 
@@ -108,7 +121,7 @@ export default function DocumentList({ selectedCompanyId }: DocumentListProps) {
     const StatusIcon = statusConfig.icon
     const isSpinning = document.status === 'parsing'
     const isError = document.status === 'error'
-    const isClickable = document.status === 'review' || isError
+    const isClickable = document.status === 'review' || document.status === 'completed' || isError
 
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       // Don't trigger if clicking on action buttons or their children
@@ -193,6 +206,26 @@ export default function DocumentList({ selectedCompanyId }: DocumentListProps) {
                       <Building2 className="size-4 text-muted-foreground" />
                       <h3 className="font-semibold text-sm">{company ? company.name : 'Unassigned Documents'}</h3>
                       <span className="text-muted-foreground text-xs">({companyDocs.length})</span>
+                      {company && (
+                        <div className="ml-auto flex items-center gap-1.5">
+                          <CompanyDataSheet
+                            companyId={company._id}
+                            renderTrigger={({ isLoading }) => (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={isLoading}
+                                className="gap-1 text-xs"
+                              >
+                                <FileText className="size-3" />
+                                View data
+                              </Button>
+                            )}
+                          />
+                          <DeleteCompanyButton companyId={company._id} companyName={company.name} />
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-2 pl-6">{companyDocs.map(renderDocument)}</div>
                   </div>
@@ -266,6 +299,7 @@ function DocumentSheet({
 function DocumentActionButtons({ document, onDelete }: { document: Doc<'document'>; onDelete: () => void }) {
   const getDownloadUrl = useQuery(api.document.getDocumentDownloadUrl, { documentId: document._id })
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
 
   const handleDownload = async () => {
     if (!getDownloadUrl) return
@@ -286,11 +320,6 @@ function DocumentActionButtons({ document, onDelete }: { document: Doc<'document
     }
   }
 
-  const handleEditTitle = () => {
-    // TODO: Implement edit title functionality
-    console.log('Edit title for document:', document._id)
-  }
-
   return (
     <div className="flex items-center gap-1">
       <Button
@@ -299,22 +328,39 @@ function DocumentActionButtons({ document, onDelete }: { document: Doc<'document
         className="text-muted-foreground hover:text-foreground"
         onClick={handleDownload}
         disabled={!getDownloadUrl || isDownloading}
-        title="Download document"
+        title="Download original document"
       >
         <Download className={cn('size-4', isDownloading && 'animate-pulse')} />
-        <span className="sr-only">Download document</span>
+        <span className="sr-only">Download original document</span>
       </Button>
+      <DocumentDataSheet
+        document={document}
+        renderTrigger={({ hasData }) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground"
+            title="View document data"
+            data-action-button
+          >
+            <FileText className={cn('size-4', !hasData && 'opacity-60')} />
+            <span className="sr-only">View document data</span>
+          </Button>
+        )}
+      />
       <Button
         variant="ghost"
         size="icon"
         className="text-muted-foreground hover:text-foreground"
-        onClick={handleEditTitle}
+        onClick={() => setIsEditDialogOpen(true)}
         title="Edit title"
+        data-action-button
       >
         <Edit className="size-4" />
         <span className="sr-only">Edit title</span>
       </Button>
       <DeleteDocumentButton documentId={document._id} onDelete={onDelete} />
+      <EditDocumentTitleDialog document={document} open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} />
     </div>
   )
 }
@@ -393,5 +439,150 @@ function DeleteDocumentButton({ documentId, onDelete }: { documentId: Id<'docume
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+function DeleteCompanyButton({ companyId, companyName }: { companyId: Id<'company'>; companyName: string }) {
+  const deleteCompany = useMutation(api.company.deleteCompany)
+  const [isOpen, setIsOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleDelete = async () => {
+    setIsSubmitting(true)
+    try {
+      await deleteCompany({ id: companyId })
+      setIsOpen(false)
+    } catch (error) {
+      console.error('Failed to delete company', error)
+      alert('Failed to delete company. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-muted-foreground text-xs hover:text-destructive"
+          onClick={() => setIsOpen(true)}
+        >
+          <Trash className="size-3" />
+          Delete
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete company</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete {companyName}? This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={() => void handleDelete()} disabled={isSubmitting}>
+            {isSubmitting ? 'Deleting...' : 'Delete company'}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function EditDocumentTitleDialog({
+  document,
+  open,
+  onOpenChange,
+}: {
+  document: Doc<'document'>
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const editDocumentTitle = useMutation(api.document.editDocumentTitle)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const editTitleForm = useForm({
+    defaultValues: {
+      title: document.title || document.fileName || '',
+    },
+    onSubmit: async ({ value }) => {
+      const nextTitle = value.title?.trim()
+      if (!nextTitle) {
+        setSubmitError('Title is required')
+        return
+      }
+
+      try {
+        await editDocumentTitle({ documentId: document._id, title: nextTitle })
+        setSubmitError(null)
+        onOpenChange(false)
+      } catch (error) {
+        console.error('Failed to update document title', error)
+        setSubmitError(error instanceof Error ? error.message : 'Failed to update title')
+      }
+    },
+  })
+
+  useEffect(() => {
+    if (open) {
+      editTitleForm.reset({
+        title: document.title || document.fileName || '',
+      })
+      setSubmitError(null)
+    }
+  }, [document.fileName, document.title, editTitleForm, open])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit document title</DialogTitle>
+          <DialogDescription>Update the document title to keep everything organized.</DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={event => {
+            event.preventDefault()
+            void editTitleForm.handleSubmit()
+          }}
+        >
+          <editTitleForm.Field name="title">
+            {field => (
+              <Field>
+                <FieldLabel>Title</FieldLabel>
+                <Input
+                  autoFocus
+                  value={field.state.value}
+                  onChange={event => {
+                    if (submitError) setSubmitError(null)
+                    field.handleChange(event.target.value)
+                  }}
+                  placeholder="Enter a document title"
+                />
+                <FieldError errors={field.state.meta.errors} />
+              </Field>
+            )}
+          </editTitleForm.Field>
+          {submitError && <FieldError>{submitError}</FieldError>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <editTitleForm.Subscribe selector={state => state.isSubmitting}>
+              {isSubmitting => (
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? 'Saving...' : 'Save title'}
+                </Button>
+              )}
+            </editTitleForm.Subscribe>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -1,11 +1,7 @@
 // Supported file types - only legal document formats
-export const acceptedFileTypes = [
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]
+export const acceptedFileTypes = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 
-export const acceptedExtensions = ['.pdf', '.doc', '.docx']
+export const acceptedExtensions = ['.docx']
 
 export const validateFile = (file: File): string | null => {
   // Validate file type

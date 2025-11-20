@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
 import {
   acceptedExtensions,
   type FileWithStatus,
@@ -17,7 +18,11 @@ import {
 } from '@/lib/files'
 import { cn } from '@/lib/utils'
 
-export default function DocumentUploader() {
+interface DocumentUploaderProps {
+  companyId: Id<'company'> | null
+}
+
+export default function DocumentUploader({ companyId }: DocumentUploaderProps) {
   const generateUploadUrl = useMutation(api.document.generateUploadUrl)
   const uploadDocument = useMutation(api.document.uploadDocument)
 
@@ -94,7 +99,7 @@ export default function DocumentUploader() {
         setFiles(prev => prev.map(f => (f.file === file ? { ...f, progress: 70 } : f)))
 
         // Upload the file metadata to the database
-        await uploadDocument({ originalFileId: storageId, fileName: file.name })
+        await uploadDocument({ originalFileId: storageId, fileName: file.name, companyId: companyId ?? undefined })
         setFiles(prev => prev.map(f => (f.file === file ? { ...f, progress: 100, status: 'success' as const } : f)))
       } catch (err) {
         // Mark as error
@@ -149,7 +154,7 @@ export default function DocumentUploader() {
     <Card className="w-full max-w-2xl">
       <CardHeader>
         <CardTitle>Upload Documents</CardTitle>
-        <CardDescription>Upload PDF, DOC, or DOCX files for processing</CardDescription>
+        <CardDescription>Upload DOC or DOCX files for processing</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">

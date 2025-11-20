@@ -3,14 +3,44 @@ import { internalMutation, internalQuery, mutation, query } from './_generated/s
 import { authComponent } from './auth'
 import { createCompanySchema, deleteCompanySchema, updateCompanySchema } from './schema'
 
+const normalizeCompanyDataKey = (input?: string | null): string | null => {
+  if (!input) return null
+  const normalized = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || null
+}
+
+const sanitizeCompanyData = (data?: Record<string, any>): Record<string, any> => {
+  const sanitized: Record<string, any> = {}
+  if (!data) return sanitized
+
+  for (const [rawKey, value] of Object.entries(data)) {
+    const canonicalKey = normalizeCompanyDataKey(rawKey)
+    if (!canonicalKey) continue
+    if (value === undefined || value === null) continue
+
+    const cleanedValue = typeof value === 'string' ? value.trim() : value
+    if (typeof cleanedValue === 'string' && cleanedValue === '') continue
+
+    sanitized[canonicalKey] = cleanedValue
+  }
+
+  return sanitized
+}
+
 export const createCompany = mutation({
   args: createCompanySchema,
   handler: async (ctx, args) => {
     await authComponent.getAuthUser(ctx)
 
+    const sanitizedData = sanitizeCompanyData(args.data)
+
     return await ctx.db.insert('company', {
       name: args.name,
-      data: args.data,
+      data: sanitizedData,
       handlerId: args.handlerId,
     })
   },
@@ -22,7 +52,10 @@ export const updateCompany = mutation({
     await authComponent.getAuthUser(ctx)
 
     const { id, ...updates } = args
-    await ctx.db.patch(id, updates)
+    await ctx.db.patch(id, {
+      ...updates,
+      data: sanitizeCompanyData(updates.data),
+    })
     return null
   },
 })
@@ -138,9 +171,11 @@ export const internalCreateCompany = internalMutation({
   args: createCompanySchema,
   returns: v.id('company'),
   handler: async (ctx, args) => {
+    const sanitizedData = sanitizeCompanyData(args.data)
+
     return await ctx.db.insert('company', {
       name: args.name,
-      data: args.data,
+      data: sanitizedData,
       handlerId: args.handlerId,
     })
   },
@@ -253,25 +288,26 @@ export const internalAggregateCompanyDataFromDocuments = internalQuery({
       .withIndex('by_company', q => q.eq('companyId', args.companyId))
       .collect()
 
-    // Start with existing company data
-    const aggregatedData: Record<string, any> = { ...company.data }
+    // Start with sanitized existing company data
+    const aggregatedData: Record<string, any> = sanitizeCompanyData(company.data)
 
     // Extract filled values from all documents, but only company-level fields
     for (const document of documents) {
       if (document.data) {
         for (const item of document.data) {
           // Only include items that have values and are company-level fields
-          if (item.value && item.value.trim() !== '' && isCompanyLevelField(item.label, item.description)) {
-            // Use label as key, but normalize it
-            const key = item.label.toLowerCase().trim().replace(/\s+/g, '_')
+          const rawValue = typeof item.value === 'string' ? item.value.trim() : item.value
+          if (rawValue === undefined || rawValue === null) continue
+          if (typeof rawValue === 'string' && rawValue === '') continue
 
-            // If key doesn't exist or is empty, add it
-            // Prefer more recent documents (later in the array, but we'll process all)
-            if (!aggregatedData[key] || aggregatedData[key] === '') {
-              aggregatedData[key] = item.value
-            }
-            // Also store with original label for exact matching
-            aggregatedData[item.label] = item.value
+          if (isCompanyLevelField(item.label, item.description)) {
+            const preferredKey = normalizeCompanyDataKey(item.key)
+            const fallbackKey = normalizeCompanyDataKey(item.label)
+            const canonicalKey = preferredKey ?? fallbackKey
+            if (!canonicalKey) continue
+
+            // Later documents override earlier ones since we process in creation order
+            aggregatedData[canonicalKey] = rawValue
           }
         }
       }
@@ -289,7 +325,7 @@ export const internalUpdateCompanyData = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.patch(args.companyId, {
-      data: args.data,
+      data: sanitizeCompanyData(args.data),
     })
     return null
   },

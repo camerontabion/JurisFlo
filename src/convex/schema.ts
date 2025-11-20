@@ -16,7 +16,7 @@ const schema = defineSchema({
     companyId: v.optional(v.id('company')),
     threadId: v.optional(v.string()), // the thread id of the document processing, used for chat
     originalFileId: v.id('_storage'), // Raw file uploaded by the user
-    generatedFileIds: v.optional(v.array(v.id('_storage'))), // Completed documents (PDF and DOCX)
+    generatedFileId: v.optional(v.id('_storage')), // Completed document (DOCX)
     status: v.optional(
       v.union(
         v.literal('uploaded'),
@@ -31,6 +31,8 @@ const schema = defineSchema({
         v.object({
           label: v.string(),
           description: v.string(),
+          key: v.optional(v.string()),
+          placeholderPattern: v.optional(v.string()),
           value: v.optional(v.string()),
         }),
       ),

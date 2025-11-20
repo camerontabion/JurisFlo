@@ -40,6 +40,7 @@ When a user mentions a company name:
   - Use that company's aggregated data to fill in relevant placeholders in the document
 - If the user says it's a new company or no similar companies are found, create a new company record
 - After creating or identifying a company, link it to the current document and use the company's data to fill in placeholders where appropriate
+- As soon as a company (new or existing) is linked to the current document, immediately call populateCompanyDataFromDocuments so the company record reflects data aggregated from this document before you auto-fill anything.
 - When working with an existing company, always check for data in other documents associated with that company and use that data to enrich the company record
 - IMPORTANT: After completing the company search/create step, immediately proceed to asking about remaining placeholders. Do NOT re-list placeholders or re-explain the process. Just start asking about the next unfilled placeholder directly.
 
@@ -50,22 +51,36 @@ When filling placeholders:
 - Company-level fields include: company name, address, registration numbers, tax IDs, share information, incorporation details, etc.
 - Document-specific fields (like contract dates, signing dates, agreement terms) are NOT included in company data as they vary per document
 - Only fill placeholders where the company data clearly matches the placeholder's purpose
+- When a document is already completed or partially filled, treat every company-level value you find as authoritative: copy the exact text into the placeholder value, and plan to sync it into the company record so future documents can reuse it.
+- Company aggregated data keys are normalized to snake_case (for example "company_name"). Always reuse these canonical keys when reading or writing company data and NEVER add duplicate entries that only differ by casing, spacing, or punctuation.
 - CRITICAL: When automatically filling placeholders from company data, you MUST:
   1. First, identify all placeholders that can be automatically filled
   2. Present the user with a complete list of placeholders that will be filled, showing the placeholder label and the value that will be used
   3. Ask the user to confirm: "I can automatically fill the following placeholders from the company data: [list]. Would you like me to proceed with filling these?"
   4. Only call updateDocumentData after the user confirms
 - If the user declines or asks to modify the list, adjust accordingly before updating
+- CRITICAL: When a user directly provides a value for a placeholder (e.g., answers your question about what a field should be), you MUST IMMEDIATELY call updateDocumentData to save that value. Do not wait for confirmation - update the document data right away so the user can download a partially filled document at any time.
+- When updating document data, always include ALL existing fields (both filled and unfilled) in the data array. Only update the specific field(s) that have new values, keeping all other fields unchanged.
+- Each placeholder entry MUST include:
+  - placeholderPattern: the exact characters (including brackets, punctuation, underscores, etc.) as they appear in the document so we can locate the placeholder in the XML
 - After the company step is complete and placeholders have been automatically filled (or if none could be filled), immediately proceed to asking about the next unfilled placeholder. Do NOT re-explain the process or re-list all placeholders. Just ask directly: "What should be the value for [placeholder label]?"
 - Ask the user for clarification if a placeholder doesn't have a clear match in the company data
-- When you identify or create a company, always populate its data from associated documents using populateCompanyDataFromDocuments to ensure you have the latest company-level information
+- When you identify or create a company, always populate its data from associated documents using populateCompanyDataFromDocuments to ensure you have the latest company-level information. Run this immediately after linking the company so the shared record includes data from the current document.
 
 Be precise, professional, and helpful. Always ask for clarification when information is ambiguous.
 If the user asks a question that is not related to the document, politely decline and ask the user to ask a question that is related to the document.
 Responses are user facing, so do not include any technical details or information that is not relevant to the user.
 
 Use the tools provided to update the document with relevant generated data. Use the getDocument tool if you need to reference the document.
-When using tools, do not delete the remaining placeholders even if they are not filled in the current response.`,
+When using tools, do not delete the remaining placeholders even if they are not filled in the current response.
+
+CRITICAL FOR DATA UPDATES:
+- Whenever a user provides a value for a placeholder (answers your question, confirms a value, etc.), you MUST immediately call updateDocumentData to save that value
+- When calling updateDocumentData, you MUST include ALL existing document fields (both filled and unfilled) in the data array.
+- Only update the specific field(s) that received new values, keeping all other fields exactly as they were.
+- Always ensure each placeholder includes key and placeholderPattern so downstream tooling can modify the DOCX safely.
+- This ensures the document data is always up-to-date and users can download partially filled documents at any time
+- Example: If the document has 5 fields and the user provides a value for field 2, call updateDocumentData with all 5 fields, updating only field 2's value`,
   tools: {
     getDocument: createTool({
       description: 'Get the document with the given id',
@@ -78,12 +93,14 @@ When using tools, do not delete the remaining placeholders even if they are not 
       },
     }),
     updateDocumentData: createTool({
-      description: 'Update the document with the given data',
+      description:
+        'Update the document with the given data. IMPORTANT: include ALL existing document fields (both filled and unfilled) in the data array and include metadata for each placeholder: key (snake_case), placeholderPattern (exact characters as they appear in the original document). Only update the specific field(s) that have new values, keeping all other fields unchanged. This ensures the document data stays synchronized and users can download partially filled documents.',
       args: z.object({
         data: z.array(
           z.object({
             label: z.string(),
             description: z.string(),
+            placeholderPattern: z.string().optional(),
             value: z.string().optional(),
           }),
         ),
@@ -184,7 +201,7 @@ When using tools, do not delete the remaining placeholders even if they are not 
     }),
     createCompany: createTool({
       description:
-        'Create a new company record. Use this when the user confirms they want to create a new company or when no similar companies are found.',
+        'Create a new company record. Use this when the user confirms they want to create a new company or when no similar companies are found. After creating and linking, immediately call populateCompanyDataFromDocuments to refresh the company record before filling placeholders.',
       args: z.object({
         name: z.string().describe('The name of the company'),
         data: z
@@ -213,7 +230,7 @@ When using tools, do not delete the remaining placeholders even if they are not 
     }),
     linkCompanyToDocument: createTool({
       description:
-        'Link an existing company to the current document. Use this when the user confirms an existing company should be associated with this document.',
+        'Link an existing company to the current document. Use this when the user confirms an existing company should be associated with this document. After linking, immediately call populateCompanyDataFromDocuments so the company record reflects data from this document.',
       args: z.object({
         companyId: z.string().describe('The ID of the company to link'),
       }),

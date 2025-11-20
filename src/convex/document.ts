@@ -28,7 +28,6 @@ export const uploadDocument = mutation({
       uploadedById: user._id,
       companyId: args.companyId,
       originalFileId: args.originalFileId,
-      generatedFileIds: [],
       status: 'uploaded',
     })
 
@@ -91,6 +90,18 @@ export const listDocuments = query({
   },
 })
 
+export const editDocumentTitle = mutation({
+  args: updateDocumentTitleSchema,
+  handler: async (ctx, args) => {
+    const user = await authComponent.getAuthUser(ctx)
+    const document = await ctx.db.get(args.documentId)
+    if (!document) throw new Error('Document not found')
+    if (document.uploadedById !== user._id) throw new Error('Unauthorized')
+
+    await ctx.runMutation(internal.document.updateDocumentTitle, args)
+  },
+})
+
 export const updateDocumentTitle = internalMutation({
   args: updateDocumentTitleSchema,
   handler: async (ctx, args) =>
@@ -137,8 +148,22 @@ export const updateDocumentData = internalMutation({
       }
     }
 
+    // Check if all fields are now filled and update status accordingly
+    const allFieldsFilled = mergedData.every(item => item.value && item.value.trim() !== '')
+
+    // Update data and status in a single patch
+    const statusUpdate: { status?: 'review' | 'completed' } = {}
+    if (document.status === 'review' && allFieldsFilled) {
+      // All fields filled, mark as completed
+      statusUpdate.status = 'completed'
+    } else if (document.status === 'completed' && !allFieldsFilled) {
+      // A field was cleared, change back to review
+      statusUpdate.status = 'review'
+    }
+
     await ctx.db.patch(args.documentId, {
       data: mergedData,
+      ...statusUpdate,
     })
   },
 })
@@ -152,7 +177,7 @@ export const updateDocumentStatus = internalMutation({
 })
 
 export const updateDocumentErrorMessage = internalMutation({
-  args: { documentId: v.id('document'), errorMessage: v.string() },
+  args: { documentId: v.id('document'), errorMessage: v.optional(v.string()) },
   handler: async (ctx, args) =>
     await ctx.db.patch(args.documentId, {
       errorMessage: args.errorMessage,
@@ -202,6 +227,23 @@ export const scheduleDocumentDeletion = mutation({
 export const deleteDocument = internalMutation({
   args: { documentId: v.id('document') },
   handler: async (ctx, args) => {
+    const document = await ctx.db.get(args.documentId)
+    if (!document) return
+
+    // Delete files from storage
+    try {
+      if (document.originalFileId) {
+        await ctx.storage.delete(document.originalFileId)
+      }
+      if (document.generatedFileId) {
+        await ctx.storage.delete(document.generatedFileId)
+      }
+    } catch (error) {
+      // Log error but continue with document deletion
+      console.error('Error deleting files from storage:', error)
+    }
+
+    // Delete the document record
     await ctx.db.delete(args.documentId)
   },
 })
@@ -223,5 +265,37 @@ export const internalGetDocumentsByCompany = internalQuery({
       .query('document')
       .withIndex('by_company', q => q.eq('companyId', args.companyId))
       .collect()
+  },
+})
+
+export const addGeneratedFile = internalMutation({
+  args: { documentId: v.id('document'), generatedFileId: v.id('_storage') },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.documentId, {
+      generatedFileId: args.generatedFileId,
+    })
+  },
+})
+
+export const getGeneratedFileDownloadUrl = query({
+  args: { documentId: v.id('document') },
+  handler: async (ctx, args) => {
+    const user = await authComponent.getAuthUser(ctx)
+    const document = await ctx.db.get(args.documentId)
+    if (!document) throw new Error('Document not found')
+
+    // Verify user owns the document
+    if (document.uploadedById !== user._id) {
+      throw new Error('Unauthorized')
+    }
+
+    if (!document.generatedFileId) {
+      throw new Error('No generated file found')
+    }
+
+    const downloadUrl = await ctx.storage.getUrl(document.generatedFileId)
+    if (!downloadUrl) throw new Error('Generated file not found')
+
+    return downloadUrl
   },
 })
