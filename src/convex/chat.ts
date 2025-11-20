@@ -1,4 +1,4 @@
-import { listUIMessages, saveMessage } from '@convex-dev/agent'
+import { filterOutOrphanedToolMessages, listMessages, saveMessage, toUIMessages } from '@convex-dev/agent'
 import { paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 import { components, internal } from './_generated/api'
@@ -8,20 +8,36 @@ import { authComponent } from './auth'
 
 // Save a user message, and kick off an async response.
 export const sendMessage = mutation({
-  args: { prompt: v.string(), threadId: v.string() },
-  handler: async (ctx, { prompt, threadId }) => {
-    await authComponent.getAuthUser(ctx)
-    const { messageId } = await saveMessage(ctx, components.agent, { threadId, prompt })
-    await ctx.scheduler.runAfter(0, internal.chat.generateResponse, { threadId, promptMessageId: messageId })
+  args: { documentId: v.id('document'), prompt: v.string(), threadId: v.string() },
+  handler: async (ctx, { documentId, prompt, threadId }) => {
+    const user = await authComponent.getAuthUser(ctx)
+    const { messageId } = await saveMessage(ctx, components.agent, {
+      threadId,
+      userId: user._id,
+      message: { role: 'user', content: prompt },
+    })
+    await ctx.scheduler.runAfter(0, internal.chat.generateResponse, {
+      documentId,
+      threadId,
+      promptMessageId: messageId,
+    })
   },
 })
 
 // Generate a response to a user message.
 export const generateResponse = internalAction({
-  args: { promptMessageId: v.string(), threadId: v.string() },
-  handler: async (ctx, { promptMessageId, threadId }) => {
-    const { thread } = await documentAgent.continueThread(ctx, { threadId })
-    await thread.generateText({ promptMessageId })
+  args: { documentId: v.id('document'), promptMessageId: v.string(), threadId: v.string() },
+  handler: async (ctx, { documentId, promptMessageId, threadId }) => {
+    const { thread } = await documentAgent.continueThread({ ...ctx, documentId }, { threadId })
+    await thread.generateText(
+      { promptMessageId },
+      {
+        contextOptions: {
+          searchOptions: { limit: 100, textSearch: true },
+          searchOtherThreads: true,
+        },
+      },
+    )
   },
 })
 
@@ -29,8 +45,10 @@ export const listThreadMessages = query({
   args: { threadId: v.string(), paginationOpts: paginationOptsValidator },
   handler: async (ctx, { threadId, paginationOpts }) => {
     await authComponent.getAuthUser(ctx)
-    const messages = await listUIMessages(ctx, components.agent, { threadId, paginationOpts })
-    return messages
+    const messages = await listMessages(ctx, components.agent, { threadId, paginationOpts })
+    const cleanedPage = filterOutOrphanedToolMessages(messages.page)
+    const uiMessages = toUIMessages(cleanedPage)
+    return { ...messages, page: uiMessages }
   },
 })
 

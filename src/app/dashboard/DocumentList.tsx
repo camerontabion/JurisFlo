@@ -1,20 +1,8 @@
 'use client'
 
-import { useUIMessages } from '@convex-dev/agent/react'
 import { useMutation, useQuery } from 'convex/react'
-import {
-  AlertCircle,
-  CheckCircle2,
-  Download,
-  Edit,
-  FileText,
-  Loader2,
-  MessageSquare,
-  Send,
-  Trash,
-  XCircle,
-} from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertCircle, CheckCircle2, Download, Edit, FileText, Loader2, Trash, XCircle } from 'lucide-react'
+import { useState } from 'react'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -26,11 +14,11 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api } from '@/convex/_generated/api'
 import type { Doc, Id } from '@/convex/_generated/dataModel'
 import { cn } from '@/lib/utils'
+import DocumentChat from './DocumentChat'
 
 type DocumentStatus = 'uploaded' | 'parsing' | 'review' | 'completed' | 'error'
 
@@ -164,179 +152,6 @@ function DocumentSheet({
   threadId: string
   setSelectedDocumentId: (documentId: Id<'document'> | null) => void
 }) {
-  const [chatMessage, setChatMessage] = useState('')
-  const [isScrolledToBottom, setIsScrolledToBottom] = useState(true)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const previousResultsLengthRef = useRef(0)
-  const previousScrollResultsLengthRef = useRef(0)
-  const previousMessagesTextRef = useRef<string>('')
-  const isLoadingMoreRef = useRef(false)
-  const scrollPositionBeforeLoadMoreRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
-  const sendMessage = useMutation(api.chat.sendMessage)
-  const {
-    results: messages,
-    status,
-    loadMore: originalLoadMore,
-  } = useUIMessages(api.chat.listThreadMessages, { threadId }, { initialNumItems: 10 /* stream: true */ })
-
-  // Wrapper for loadMore that tracks when it's called and preserves scroll position
-  const loadMore = useCallback(
-    (numItems: number) => {
-      const container = messagesContainerRef.current
-      if (container) {
-        // Store current scroll position before loading more
-        scrollPositionBeforeLoadMoreRef.current = {
-          scrollTop: container.scrollTop,
-          scrollHeight: container.scrollHeight,
-        }
-      }
-      isLoadingMoreRef.current = true
-      originalLoadMore(numItems)
-    },
-    [originalLoadMore],
-  )
-
-  // Track message text changes for streaming updates
-  const messagesText = messages.map(m => m.text || '').join('|')
-
-  // Initialize previous scroll results length and messages text
-  useEffect(() => {
-    if (messages.length > 0 && previousScrollResultsLengthRef.current === 0) {
-      previousScrollResultsLengthRef.current = messages.length
-      previousMessagesTextRef.current = messagesText
-    }
-  }, [messages.length, messagesText])
-
-  // Check if scrolled to bottom
-  useEffect(() => {
-    const container = messagesContainerRef.current
-    if (!container) return
-
-    const checkScrollPosition = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 10 // 10px threshold
-      setIsScrolledToBottom(isAtBottom)
-    }
-
-    const handleScroll = () => {
-      checkScrollPosition()
-    }
-
-    container.addEventListener('scroll', handleScroll)
-    // Check initial state
-    checkScrollPosition()
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll)
-    }
-  }, [])
-
-  // Helper function to smoothly scroll to bottom
-  const scrollToBottom = useCallback((smooth = true) => {
-    const container = messagesContainerRef.current
-    if (!container) return
-
-    // Use requestAnimationFrame to ensure DOM has updated
-    requestAnimationFrame(() => {
-      const container = messagesContainerRef.current
-      if (!container) return
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: smooth ? 'smooth' : 'auto',
-      })
-      setIsScrolledToBottom(true)
-    })
-  }, [])
-
-  // Re-check scroll position when results change (container height may have changed)
-  const resultsLength = messages.length
-  useEffect(() => {
-    const container = messagesContainerRef.current
-    if (!container) return
-
-    if (resultsLength !== previousResultsLengthRef.current) {
-      previousResultsLengthRef.current = resultsLength
-      // Use requestAnimationFrame to ensure DOM has updated
-      requestAnimationFrame(() => {
-        const container = messagesContainerRef.current
-        if (!container) return
-        const { scrollTop, scrollHeight, clientHeight } = container
-        const isAtBottom = scrollHeight - scrollTop - clientHeight < 10
-        setIsScrolledToBottom(isAtBottom)
-      })
-    }
-  }, [resultsLength])
-
-  // Track message text changes for streaming updates
-  useEffect(() => {
-    const hasTextChanged = messagesText !== previousMessagesTextRef.current
-
-    if (hasTextChanged) {
-      previousMessagesTextRef.current = messagesText
-      // Scroll when message text updates (e.g., streaming) if user is at bottom
-      if (isScrolledToBottom) {
-        scrollToBottom(true)
-      }
-    }
-  }, [messagesText, isScrolledToBottom, scrollToBottom])
-
-  // Auto-scroll to bottom when new messages arrive (user or agent)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resultsLength is needed to trigger scroll when new messages arrive
-  useEffect(() => {
-    const hasNewMessages = resultsLength !== previousScrollResultsLengthRef.current
-
-    if (hasNewMessages) {
-      previousScrollResultsLengthRef.current = resultsLength
-
-      // If loading more, preserve scroll position instead of scrolling to bottom
-      if (isLoadingMoreRef.current && scrollPositionBeforeLoadMoreRef.current) {
-        const container = messagesContainerRef.current
-        if (container) {
-          // Use requestAnimationFrame to ensure DOM has updated with new messages
-          requestAnimationFrame(() => {
-            const container = messagesContainerRef.current
-            if (!container) return
-
-            const previousScroll = scrollPositionBeforeLoadMoreRef.current
-            if (previousScroll) {
-              // Calculate the difference in scroll height (new content added at top)
-              const heightDifference = container.scrollHeight - previousScroll.scrollHeight
-              // Adjust scroll position to maintain visual position
-              container.scrollTop = previousScroll.scrollTop + heightDifference
-            }
-
-            // Clear the refs
-            scrollPositionBeforeLoadMoreRef.current = null
-            isLoadingMoreRef.current = false
-          })
-        } else {
-          isLoadingMoreRef.current = false
-          scrollPositionBeforeLoadMoreRef.current = null
-        }
-      } else {
-        // Normal case: scroll to bottom when new messages arrive
-        scrollToBottom(true)
-        isLoadingMoreRef.current = false
-        scrollPositionBeforeLoadMoreRef.current = null
-      }
-    }
-  }, [resultsLength, isScrolledToBottom, scrollToBottom])
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!chatMessage.trim()) return
-
-    // Add user message
-    sendMessage({ threadId, prompt: chatMessage })
-    setChatMessage('')
-
-    // Auto-scroll to bottom after sending message
-    scrollToBottom(true)
-  }
-
-  const displayMessages = messages.slice(3)
-  const hasMessages = displayMessages.length > 0
-
   return (
     <Sheet open={document._id !== null} onOpenChange={open => !open && setSelectedDocumentId(null)}>
       <SheetContent side="right" className="flex w-full flex-col p-0 sm:max-w-lg">
@@ -358,94 +173,7 @@ function DocumentSheet({
           </div>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Chat Messages */}
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-6">
-            {/* Load More Button / Loading Indicator at Top */}
-            {status === 'CanLoadMore' && (
-              <div className="mb-4 flex justify-center">
-                <Button variant="outline" size="sm" onClick={() => loadMore(10)}>
-                  Load More Messages
-                </Button>
-              </div>
-            )}
-            {(status === 'LoadingMore' || status === 'LoadingFirstPage') && (
-              <div className="mb-4 flex items-center justify-center gap-2 text-muted-foreground text-sm">
-                <Loader2 className="size-4 animate-spin" />
-                <span>{status === 'LoadingMore' ? 'Loading more messages...' : 'Loading messages...'}</span>
-              </div>
-            )}
-
-            {!hasMessages && status !== 'LoadingFirstPage' && (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <MessageSquare className="mx-auto mb-3 size-12 text-muted-foreground/50" />
-                  <p className="text-muted-foreground text-sm">No messages yet. Start a conversation below.</p>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              {displayMessages.map((message, index) => {
-                const messageId = message.id || `message-${index}`
-                return (
-                  <div
-                    key={messageId}
-                    className={cn('flex gap-3', message.role === 'user' ? 'justify-end' : 'justify-start')}
-                  >
-                    {message.role === 'assistant' && (
-                      <div className="shrink-0">
-                        <div className="flex size-8 items-center justify-center rounded-full bg-primary/10">
-                          <MessageSquare className="size-4 text-primary" />
-                        </div>
-                      </div>
-                    )}
-                    <div
-                      className={cn(
-                        'max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm',
-                        message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
-                      )}
-                    >
-                      {message.text ? (
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</p>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <div className="size-1.5 animate-pulse rounded-full bg-current" />
-                          <div className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:0.2s]" />
-                          <div className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:0.4s]" />
-                        </div>
-                      )}
-                    </div>
-                    {message.role === 'user' && (
-                      <div className="shrink-0">
-                        <div className="flex size-8 items-center justify-center rounded-full bg-primary">
-                          <span className="font-medium text-primary-foreground text-xs">You</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Chat Input */}
-          <div className="border-t bg-background px-4 py-4">
-            <form onSubmit={handleSendMessage} className="flex gap-2">
-              <Input
-                value={chatMessage}
-                onChange={e => setChatMessage(e.target.value)}
-                placeholder="Type your message..."
-                className="flex-1"
-                disabled={status === 'LoadingFirstPage'}
-              />
-              <Button type="submit" size="icon" disabled={!chatMessage.trim() || status === 'LoadingFirstPage'}>
-                <Send className="size-4" />
-                <span className="sr-only">Send message</span>
-              </Button>
-            </form>
-          </div>
-        </div>
+        <DocumentChat documentId={document._id} threadId={threadId} open={document._id !== null} />
       </SheetContent>
     </Sheet>
   )

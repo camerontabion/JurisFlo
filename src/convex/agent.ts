@@ -1,5 +1,5 @@
 import { openai } from '@ai-sdk/openai'
-import { Agent, createTool, stepCountIs } from '@convex-dev/agent'
+import { Agent, createTool, stepCountIs, type ToolCtx } from '@convex-dev/agent'
 import { z } from 'zod'
 import { components, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
@@ -9,8 +9,11 @@ const agentDefaults = {
   textEmbeddingModel: openai.embedding('text-embedding-3-small'),
 }
 
+type DocumentAgentArgs = { documentId: Id<'document'> }
+type DocumentAgentCtx = ToolCtx & DocumentAgentArgs
+
 // document agent creator
-export const documentAgent = new Agent(components.agent, {
+export const documentAgent = new Agent<DocumentAgentCtx>(components.agent, {
   name: `Legal Document Processing Agent`,
   instructions: `You are a legal document processing assistant. Your role is to:
 1. Extract structured data from legal documents for company records
@@ -25,103 +28,32 @@ Responses are user facing, so do not include any technical details or informatio
 Use the tools provided to update the document with relevant generated data. Use the getDocument tool if you need to reference the document.
 When using tools, do not delete the remaining placeholders even if they are not filled in the current response.`,
   tools: {
-    getDocumentData: createTool({
+    getDocument: createTool({
       description: 'Get the document with the given id',
-      args: z.object({
-        documentId: z.string().describe('The id of the document to get'),
-      }),
-      handler: async (ctx, args) => {
+      args: z.object({}),
+      handler: async (ctx: DocumentAgentCtx) => {
         const document: Doc<'document'> = await ctx.runQuery(internal.document.internalGetDocument, {
-          documentId: args.documentId as Id<'document'>,
+          documentId: ctx.documentId,
         })
-        return {
-          success: true,
-          message: 'Document retrieved successfully',
-          data: document.data
-            ?.map(
-              (p: { label: string; description: string; value?: string }) =>
-                `- ${p.label}: ${p.description} ${p.value ? `(Value: ${p.value})` : ''}`,
-            )
-            .join('\n'),
-        }
-      },
-    }),
-    updateDocumentTitle: createTool({
-      description: 'Update the document with the filled and missing data',
-      args: z.object({
-        documentId: z.string().describe('The id of the document to update'),
-        title: z.string().describe('The title of the document'),
-      }),
-      handler: async (ctx, args) => {
-        await ctx.runMutation(internal.document.updateDocumentTitle, {
-          documentId: args.documentId as Id<'document'>,
-          title: args.title,
-        })
-        return {
-          success: true,
-          message: 'Document updated successfully',
-        }
+        return document
       },
     }),
     updateDocumentData: createTool({
-      description: 'Update the document with the filled and missing data',
+      description: 'Update the document with the given data',
       args: z.object({
-        documentId: z.string().describe('The id of the document to update'),
-        data: z
-          .array(z.object({ label: z.string(), description: z.string(), value: z.optional(z.string()) }))
-          .describe('The missing data to update'),
+        data: z.array(
+          z.object({
+            label: z.string(),
+            description: z.string(),
+            value: z.string().optional(),
+          }),
+        ),
       }),
-      handler: async (ctx, args) => {
+      handler: async (ctx: DocumentAgentCtx, args) => {
         await ctx.runMutation(internal.document.updateDocumentData, {
-          documentId: args.documentId as Id<'document'>,
+          documentId: ctx.documentId,
           data: args.data,
         })
-        return {
-          success: true,
-          message: 'Document updated successfully',
-        }
-      },
-    }),
-    updateDocumentStatus: createTool({
-      description: 'Update the status of the document',
-      args: z.object({
-        documentId: z.string().describe('The id of the document to update'),
-        status: z
-          .union([
-            z.literal('uploaded'),
-            z.literal('parsing'),
-            z.literal('review'),
-            z.literal('completed'),
-            z.literal('error'),
-          ])
-          .describe('The status of the document'),
-      }),
-      handler: async (ctx, args) => {
-        await ctx.runMutation(internal.document.updateDocumentStatus, {
-          documentId: args.documentId as Id<'document'>,
-          status: args.status,
-        })
-        return {
-          success: true,
-          message: 'Document updated successfully',
-        }
-      },
-    }),
-    updateDocumentErrorMessage: createTool({
-      description: 'Update the error message of the document',
-      args: z.object({
-        documentId: z.string().describe('The id of the document to update'),
-        errorMessage: z.string().describe('The error message to update'),
-      }),
-      handler: async (ctx, args) => {
-        await ctx.runMutation(internal.document.updateDocumentErrorMessage, {
-          documentId: args.documentId as Id<'document'>,
-          errorMessage: args.errorMessage,
-        })
-        return {
-          success: true,
-          message: 'Document updated successfully',
-        }
       },
     }),
   },
