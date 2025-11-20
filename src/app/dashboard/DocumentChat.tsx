@@ -17,9 +17,11 @@ interface DocumentChatProps {
 
 export default function DocumentChat({ documentId, threadId, open }: DocumentChatProps) {
   const [chatMessage, setChatMessage] = useState('')
+  const [isSending, setIsSending] = useState(false)
   const sendMessage = useMutation(api.chat.sendMessage)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const wasAgentThinkingRef = useRef(false)
 
   const {
     results: messages,
@@ -27,12 +29,17 @@ export default function DocumentChat({ documentId, threadId, open }: DocumentCha
     loadMore,
   } = useUIMessages(api.chat.listThreadMessages, { threadId }, { initialNumItems: 100 })
 
+  // Check if agent is currently thinking (last message is assistant without text)
+  const lastMessage = messages[messages.length - 1]
+  const isAgentThinking = lastMessage?.role === 'assistant' && !lastMessage.text
+  const isDisabled = status === 'LoadingFirstPage' || isAgentThinking || isSending
+
   useEffect(() => {
     if (open && inputRef.current) {
       // Wait for sheet animation to complete before focusing
       const timeoutId = setTimeout(() => {
         inputRef.current?.focus()
-      }, 200)
+      }, 250)
       return () => clearTimeout(timeoutId)
     }
   }, [open])
@@ -43,13 +50,29 @@ export default function DocumentChat({ documentId, threadId, open }: DocumentCha
     scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
   }, [messages, open])
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!chatMessage.trim()) return
+  // Focus input after agent finishes responding
+  useEffect(() => {
+    // When agent transitions from thinking to not thinking, focus the input
+    if (wasAgentThinkingRef.current && !isAgentThinking && open) {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+      })
+    }
+    wasAgentThinkingRef.current = isAgentThinking
+  }, [isAgentThinking, open])
 
-    // Add user message
-    sendMessage({ documentId, threadId, prompt: chatMessage })
-    setChatMessage('')
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!chatMessage.trim() || isDisabled) return
+
+    setIsSending(true)
+    try {
+      await sendMessage({ documentId, threadId, prompt: chatMessage })
+      setChatMessage('')
+    } finally {
+      // Reset after a short delay to allow the message to be added to the list
+      setTimeout(() => setIsSending(false), 100)
+    }
   }
 
   return (
@@ -132,12 +155,12 @@ export default function DocumentChat({ documentId, threadId, open }: DocumentCha
             ref={inputRef}
             value={chatMessage}
             onChange={e => setChatMessage(e.target.value)}
-            placeholder="Type your message..."
+            placeholder={isAgentThinking ? 'Agent is thinking...' : 'Type your message...'}
             className="flex-1"
-            disabled={status === 'LoadingFirstPage'}
+            disabled={isDisabled}
           />
-          <Button type="submit" size="icon" disabled={!chatMessage.trim() || status === 'LoadingFirstPage'}>
-            <Send className="size-4" />
+          <Button type="submit" size="icon" disabled={!chatMessage.trim() || isDisabled}>
+            {isSending || isAgentThinking ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
             <span className="sr-only">Send message</span>
           </Button>
         </form>
