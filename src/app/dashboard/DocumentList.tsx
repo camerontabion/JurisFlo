@@ -264,9 +264,26 @@ function DocumentSheet({
 }
 
 function DocumentActionButtons({ document, onDelete }: { document: Doc<'document'>; onDelete: () => void }) {
-  const handleDownload = () => {
-    // TODO: Implement download functionality
-    console.log('Download document:', document._id)
+  const getDownloadUrl = useQuery(api.document.getDocumentDownloadUrl, { documentId: document._id })
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleDownload = async () => {
+    if (!getDownloadUrl) return
+
+    setIsDownloading(true)
+    try {
+      // Create a temporary anchor element to trigger download
+      const link = window.document.createElement('a')
+      link.href = getDownloadUrl
+      link.download = document.fileName || 'document'
+      window.document.body.appendChild(link)
+      link.click()
+      window.document.body.removeChild(link)
+    } catch (error) {
+      console.error('Failed to download document:', error)
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   const handleEditTitle = () => {
@@ -281,9 +298,10 @@ function DocumentActionButtons({ document, onDelete }: { document: Doc<'document
         size="icon"
         className="text-muted-foreground hover:text-foreground"
         onClick={handleDownload}
+        disabled={!getDownloadUrl || isDownloading}
         title="Download document"
       >
-        <Download className="size-4" />
+        <Download className={cn('size-4', isDownloading && 'animate-pulse')} />
         <span className="sr-only">Download document</span>
       </Button>
       <Button

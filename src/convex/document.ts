@@ -9,9 +9,12 @@ import {
   uploadDocumentSchema,
 } from './schema'
 
-export const generateUploadUrl = mutation(async ctx => {
-  await authComponent.getAuthUser(ctx)
-  return await ctx.storage.generateUploadUrl()
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async ctx => {
+    await authComponent.getAuthUser(ctx)
+    return await ctx.storage.generateUploadUrl()
+  },
 })
 
 export const uploadDocument = mutation({
@@ -41,6 +44,26 @@ export const getDocument = query({
   handler: async (ctx, args) => {
     await authComponent.getAuthUser(ctx)
     return await ctx.db.get(args.documentId)
+  },
+})
+
+export const getDocumentDownloadUrl = query({
+  args: { documentId: v.id('document') },
+  handler: async (ctx, args) => {
+    const user = await authComponent.getAuthUser(ctx)
+    const document = await ctx.db.get(args.documentId)
+    if (!document) throw new Error('Document not found')
+
+    // Verify user owns the document
+    if (document.uploadedById !== user._id) {
+      throw new Error('Unauthorized')
+    }
+
+    // Get the download URL for the original file
+    const downloadUrl = await ctx.storage.getUrl(document.originalFileId)
+    if (!downloadUrl) throw new Error('File not found')
+
+    return downloadUrl
   },
 })
 
@@ -185,7 +208,6 @@ export const deleteDocument = internalMutation({
 
 export const linkCompanyToDocument = internalMutation({
   args: { documentId: v.id('document'), companyId: v.id('company') },
-  returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.patch(args.documentId, {
       companyId: args.companyId,
@@ -196,38 +218,6 @@ export const linkCompanyToDocument = internalMutation({
 
 export const internalGetDocumentsByCompany = internalQuery({
   args: { companyId: v.id('company') },
-  returns: v.array(
-    v.object({
-      _id: v.id('document'),
-      _creationTime: v.number(),
-      title: v.optional(v.string()),
-      fileName: v.optional(v.string()),
-      uploadedById: v.string(),
-      companyId: v.optional(v.id('company')),
-      threadId: v.optional(v.string()),
-      originalFileId: v.id('_storage'),
-      generatedFileIds: v.optional(v.array(v.id('_storage'))),
-      status: v.optional(
-        v.union(
-          v.literal('uploaded'),
-          v.literal('parsing'),
-          v.literal('review'),
-          v.literal('completed'),
-          v.literal('error'),
-        ),
-      ),
-      data: v.optional(
-        v.array(
-          v.object({
-            label: v.string(),
-            description: v.string(),
-            value: v.optional(v.string()),
-          }),
-        ),
-      ),
-      errorMessage: v.optional(v.string()),
-    }),
-  ),
   handler: async (ctx, args) => {
     return await ctx.db
       .query('document')
