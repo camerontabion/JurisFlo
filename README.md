@@ -5,6 +5,8 @@ Leverages OpenAI's API and Convex's AI Agent workflows to provide a streamlined 
 
 Other features include an account system, automatic company data recognition, and smart back-filling.
 
+*This example project is not complete and the prompts / model choice could use some work.*
+
 ### Screenshots
 
 ![Dashboard Screenshot](public/dashboard.png)
