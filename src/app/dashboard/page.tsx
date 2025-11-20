@@ -2,8 +2,7 @@ import { fetchQuery } from 'convex/nextjs'
 import { redirect } from 'next/navigation'
 import { api } from '@/convex/_generated/api'
 import { getToken } from '@/lib/auth-server'
-import DocumentList from './DocumentList'
-import DocumentUploader from './DocumentUploader'
+import DashboardContent from './DashboardContent'
 import UserProfile from './UserProfile'
 
 export default async function DashboardPage() {
@@ -18,10 +17,7 @@ export default async function DashboardPage() {
         <h1 className="font-bold text-2xl">Dashboard</h1>
         <UserProfile user={user} />
       </header>
-      <main className="flex w-full max-w-6xl flex-col items-center justify-center gap-4">
-        <DocumentUploader />
-        <DocumentList />
-      </main>
+      <DashboardContent />
     </div>
   )
 }

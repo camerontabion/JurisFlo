@@ -1,7 +1,18 @@
 'use client'
 
 import { useMutation, useQuery } from 'convex/react'
-import { AlertCircle, CheckCircle2, Download, Edit, FileText, Loader2, RotateCw, Trash, XCircle } from 'lucide-react'
+import {
+  AlertCircle,
+  Building2,
+  CheckCircle2,
+  Download,
+  Edit,
+  FileText,
+  Loader2,
+  RotateCw,
+  Trash,
+  XCircle,
+} from 'lucide-react'
 import { useState } from 'react'
 import {
   AlertDialog,
@@ -63,18 +74,104 @@ function getStatusConfig(status?: DocumentStatus) {
   }
 }
 
-export default function DocumentList() {
-  const documents = useQuery(api.document.listDocuments, {})
+type DocumentListProps = {
+  selectedCompanyId: Id<'company'> | null
+}
+
+export default function DocumentList({ selectedCompanyId }: DocumentListProps) {
+  const documents = useQuery(api.document.listDocuments, selectedCompanyId ? { companyId: selectedCompanyId } : {})
+  const companies = useQuery(api.company.listCompanies, {})
   const [selectedDocumentId, setSelectedDocumentId] = useState<Id<'document'> | null>(null)
   const selectedDocument = documents?.find(doc => doc._id === selectedDocumentId)
 
-  const isLoading = documents === undefined
+  const isLoading = documents === undefined || companies === undefined
+
+  // Group documents by company when showing all documents
+  const groupedDocuments = selectedCompanyId
+    ? null // Don't group when a specific company is selected
+    : documents
+      ? documents.reduce(
+          (acc, doc) => {
+            const key = doc.companyId || 'unassigned'
+            if (!acc[key]) {
+              acc[key] = []
+            }
+            acc[key].push(doc)
+            return acc
+          },
+          {} as Record<string | Id<'company'>, Doc<'document'>[]>,
+        )
+      : null
+
+  const renderDocument = (document: Doc<'document'>) => {
+    const statusConfig = getStatusConfig(document.status)
+    const StatusIcon = statusConfig.icon
+    const isSpinning = document.status === 'parsing'
+    const isError = document.status === 'error'
+    const isClickable = document.status === 'review' || isError
+
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      // Don't trigger if clicking on action buttons or their children
+      const target = e.target as HTMLElement
+      if (target.closest('button[data-action-button]') || target.closest('[data-action-button]')) {
+        return
+      }
+      if (isClickable) {
+        setSelectedDocumentId(document._id)
+      }
+    }
+
+    return (
+      <div key={document._id} className="group w-full">
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={!isClickable}
+          className={cn(
+            'flex w-full items-center gap-4 rounded-lg border bg-card p-4 text-left transition-colors',
+            isClickable && 'cursor-pointer hover:border-accent-foreground/20 hover:bg-accent',
+            !isClickable && 'cursor-not-allowed opacity-60',
+          )}
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="truncate font-medium text-sm">
+                {document.title || document.fileName || 'Untitled Document'}
+              </p>
+            </div>
+            {document.errorMessage && <p className="mt-1 text-destructive text-xs">{document.errorMessage}</p>}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isError && (
+              <div className="flex items-center gap-1" data-action-button>
+                <RetryDocumentButton documentId={document._id} />
+                <DeleteDocumentButton documentId={document._id} onDelete={() => {}} />
+              </div>
+            )}
+            <div
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium text-xs',
+                statusConfig.className,
+              )}
+            >
+              <StatusIcon className={cn('size-3', isSpinning && 'animate-spin')} />
+              <span>{statusConfig.label}</span>
+            </div>
+          </div>
+        </button>
+      </div>
+    )
+  }
 
   return (
     <Card className="w-full max-w-2xl">
       <CardHeader>
         <CardTitle>Documents</CardTitle>
-        <CardDescription>View and manage your uploaded documents</CardDescription>
+        <CardDescription>
+          {selectedCompanyId
+            ? 'Documents for selected company'
+            : 'View and manage your uploaded documents organized by company'}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -82,69 +179,43 @@ export default function DocumentList() {
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : documents && documents.length > 0 ? (
-          <div className="space-y-2">
-            {documents.map(document => {
-              const statusConfig = getStatusConfig(document.status)
-              const StatusIcon = statusConfig.icon
-              const isSpinning = document.status === 'parsing'
-              const isError = document.status === 'error'
-
-              return (
-                <div
-                  key={document._id}
-                  className="group w-full"
-                >
-                  <div className="flex items-center gap-4 rounded-lg border bg-card p-4 transition-colors">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDocumentId(document._id)}
-                      className="min-w-0 flex-1 text-left"
-                      disabled={document.status !== 'review' && !isError}
-                    >
-                      <div className="flex items-center gap-2">
-                        <p className="truncate font-medium text-sm">
-                          {document.title || document.fileName || 'Untitled Document'}
-                        </p>
-                      </div>
-                      {document.errorMessage && (
-                        <p className="mt-1 text-destructive text-xs">{document.errorMessage}</p>
-                      )}
-                    </button>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {isError && (
-                        <div className="flex items-center gap-1">
-                          <RetryDocumentButton documentId={document._id} />
-                          <DeleteDocumentButton documentId={document._id} onDelete={() => {}} />
-                        </div>
-                      )}
-                      <div
-                        className={cn(
-                          'flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium text-xs',
-                          statusConfig.className,
-                        )}
-                      >
-                        <StatusIcon className={cn('size-3', isSpinning && 'animate-spin')} />
-                        <span>{statusConfig.label}</span>
-                      </div>
+          <div className="space-y-6">
+            {selectedCompanyId ? (
+              // Show flat list when a company is selected
+              <div className="space-y-2">{documents.map(renderDocument)}</div>
+            ) : groupedDocuments ? (
+              // Show grouped view when showing all documents
+              Object.entries(groupedDocuments).map(([companyId, companyDocs]) => {
+                const company = companyId !== 'unassigned' ? companies?.find(c => c._id === companyId) : null
+                return (
+                  <div key={companyId} className="space-y-3">
+                    <div className="flex items-center gap-2 border-b pb-2">
+                      <Building2 className="size-4 text-muted-foreground" />
+                      <h3 className="font-semibold text-sm">{company ? company.name : 'Unassigned Documents'}</h3>
+                      <span className="text-muted-foreground text-xs">({companyDocs.length})</span>
                     </div>
+                    <div className="space-y-2 pl-6">{companyDocs.map(renderDocument)}</div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })
+            ) : null}
           </div>
         ) : (
           <div className="py-8 text-center text-muted-foreground text-sm">
-            No documents yet. Upload a document to get started.
+            {selectedCompanyId
+              ? 'No documents for this company yet.'
+              : 'No documents yet. Upload a document to get started.'}
           </div>
         )}
       </CardContent>
       {selectedDocument?.threadId &&
-        (selectedDocument?.status === 'review' ||
-          selectedDocument?.status === 'completed' ||
-          selectedDocument?.status === 'error') && (
+        (selectedDocument.status === 'review' ||
+          selectedDocument.status === 'completed' ||
+          selectedDocument.status === 'error') && (
           <DocumentSheet
             document={selectedDocument}
             threadId={selectedDocument.threadId}
+            selectedDocumentId={selectedDocumentId}
             setSelectedDocumentId={setSelectedDocumentId}
           />
         )}
@@ -155,14 +226,18 @@ export default function DocumentList() {
 function DocumentSheet({
   document,
   threadId,
+  selectedDocumentId,
   setSelectedDocumentId,
 }: {
   document: Doc<'document'>
   threadId: string
+  selectedDocumentId: Id<'document'> | null
   setSelectedDocumentId: (documentId: Id<'document'> | null) => void
 }) {
+  const isOpen = selectedDocumentId === document._id
+
   return (
-    <Sheet open={document._id !== null} onOpenChange={open => !open && setSelectedDocumentId(null)}>
+    <Sheet open={isOpen} onOpenChange={open => !open && setSelectedDocumentId(null)}>
       <SheetContent side="right" className="flex w-full flex-col p-0 sm:max-w-lg">
         <SheetHeader className="border-b px-6 py-4 pr-14">
           <div className="space-y-3">
@@ -249,6 +324,7 @@ function RetryDocumentButton({ documentId }: { documentId: Id<'document'> }) {
       onClick={handleRetry}
       disabled={isRetrying}
       title="Retry parsing"
+      data-action-button
     >
       <RotateCw className={cn('size-4', isRetrying && 'animate-spin')} />
       <span className="sr-only">Retry parsing</span>
@@ -268,6 +344,7 @@ function DeleteDocumentButton({ documentId, onDelete }: { documentId: Id<'docume
           size="icon"
           className="text-muted-foreground hover:text-destructive"
           onClick={() => setIsDeleting(true)}
+          data-action-button
         >
           <Trash className="size-4" />
           <span className="sr-only">Delete document</span>

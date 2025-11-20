@@ -68,10 +68,10 @@ export const searchCompanies = query({
     await authComponent.getAuthUser(ctx)
 
     const allCompanies = await ctx.db.query('company').collect()
-    
+
     // Simple fuzzy matching: normalize names and check for similarity
     const normalizedSearch = args.searchTerm.toLowerCase().trim()
-    
+
     const matches = allCompanies
       .map(company => {
         const normalizedName = company.name.toLowerCase().trim()
@@ -86,7 +86,7 @@ export const searchCompanies = query({
           if (normalizedSearch[i] === normalizedName[i]) similarity++
         }
         const similarityScore = similarity / Math.max(normalizedSearch.length, normalizedName.length)
-        
+
         return {
           company,
           score: exactMatch ? 1 : containsMatch ? 0.8 : similarityScore,
@@ -96,7 +96,7 @@ export const searchCompanies = query({
       .sort((a, b) => b.score - a.score) // Sort by score descending
       .slice(0, 10) // Limit to top 10 matches
       .map(match => match.company)
-    
+
     return matches
   },
 })
