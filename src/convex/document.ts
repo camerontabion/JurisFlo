@@ -145,6 +145,29 @@ export const updateDocumentThread = internalMutation({
   },
 })
 
+export const retryDocumentParsing = mutation({
+  args: { documentId: v.id('document') },
+  handler: async (ctx, args) => {
+    const user = await authComponent.getAuthUser(ctx)
+    const document = await ctx.db.get(args.documentId)
+    if (!document) throw new Error('Document not found')
+
+    // Verify user owns the document
+    if (document.uploadedById !== user._id) {
+      throw new Error('Unauthorized')
+    }
+
+    // Clear error message and reset status
+    await ctx.db.patch(args.documentId, {
+      status: 'uploaded',
+      errorMessage: undefined,
+    })
+
+    // Re-trigger parsing
+    ctx.scheduler.runAfter(0, internal.parser.extractFieldsFromDocument, { documentId: args.documentId })
+  },
+})
+
 export const scheduleDocumentDeletion = mutation({
   args: { documentId: v.id('document') },
   handler: async (ctx, args) => {
@@ -157,5 +180,58 @@ export const deleteDocument = internalMutation({
   args: { documentId: v.id('document') },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.documentId)
+  },
+})
+
+export const linkCompanyToDocument = internalMutation({
+  args: { documentId: v.id('document'), companyId: v.id('company') },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.documentId, {
+      companyId: args.companyId,
+    })
+    return null
+  },
+})
+
+export const internalGetDocumentsByCompany = internalQuery({
+  args: { companyId: v.id('company') },
+  returns: v.array(
+    v.object({
+      _id: v.id('document'),
+      _creationTime: v.number(),
+      title: v.optional(v.string()),
+      fileName: v.optional(v.string()),
+      uploadedById: v.string(),
+      companyId: v.optional(v.id('company')),
+      threadId: v.optional(v.string()),
+      originalFileId: v.id('_storage'),
+      generatedFileIds: v.optional(v.array(v.id('_storage'))),
+      status: v.optional(
+        v.union(
+          v.literal('uploaded'),
+          v.literal('parsing'),
+          v.literal('review'),
+          v.literal('completed'),
+          v.literal('error'),
+        ),
+      ),
+      data: v.optional(
+        v.array(
+          v.object({
+            label: v.string(),
+            description: v.string(),
+            value: v.optional(v.string()),
+          }),
+        ),
+      ),
+      errorMessage: v.optional(v.string()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('document')
+      .withIndex('by_company', q => q.eq('companyId', args.companyId))
+      .collect()
   },
 })

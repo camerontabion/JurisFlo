@@ -123,10 +123,10 @@ The document text is: ${rawText}
         documentId: args.documentId,
         data: result.object.data,
       })
-    } catch {
+    } catch (error) {
       await ctx.runMutation(internal.document.updateDocumentErrorMessage, {
         documentId: args.documentId,
-        errorMessage: 'Failed to parse document',
+        errorMessage: error instanceof Error ? error.message : 'Failed to parse document',
       })
       await ctx.runMutation(internal.document.updateDocumentStatus, {
         documentId: args.documentId,

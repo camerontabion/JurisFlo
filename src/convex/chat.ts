@@ -1,4 +1,4 @@
-import { filterOutOrphanedToolMessages, listMessages, saveMessage, toUIMessages } from '@convex-dev/agent'
+import { listUIMessages, saveMessage } from '@convex-dev/agent'
 import { paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 import { components, internal } from './_generated/api'
@@ -45,10 +45,8 @@ export const listThreadMessages = query({
   args: { threadId: v.string(), paginationOpts: paginationOptsValidator },
   handler: async (ctx, { threadId, paginationOpts }) => {
     await authComponent.getAuthUser(ctx)
-    const messages = await listMessages(ctx, components.agent, { threadId, paginationOpts })
-    const cleanedPage = filterOutOrphanedToolMessages(messages.page)
-    const uiMessages = toUIMessages(cleanedPage)
-    return { ...messages, page: uiMessages }
+    const messages = await listUIMessages(ctx, components.agent, { threadId, paginationOpts })
+    return messages
   },
 })
 

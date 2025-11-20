@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery } from 'convex/react'
-import { AlertCircle, CheckCircle2, Download, Edit, FileText, Loader2, Trash, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Download, Edit, FileText, Loader2, RotateCw, Trash, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import {
   AlertDialog,
@@ -87,17 +87,20 @@ export default function DocumentList() {
               const statusConfig = getStatusConfig(document.status)
               const StatusIcon = statusConfig.icon
               const isSpinning = document.status === 'parsing'
+              const isError = document.status === 'error'
 
               return (
-                <button
+                <div
                   key={document._id}
-                  type="button"
-                  onClick={() => setSelectedDocumentId(document._id)}
-                  className="group w-full text-left"
-                  disabled={document.status !== 'review'}
+                  className="group w-full"
                 >
-                  <div className="flex items-center gap-4 rounded-lg border bg-card p-4 transition-colors not-group-disabled:hover:cursor-pointer not-group-disabled:hover:bg-accent">
-                    <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-4 rounded-lg border bg-card p-4 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDocumentId(document._id)}
+                      className="min-w-0 flex-1 text-left"
+                      disabled={document.status !== 'review' && !isError}
+                    >
                       <div className="flex items-center gap-2">
                         <p className="truncate font-medium text-sm">
                           {document.title || document.fileName || 'Untitled Document'}
@@ -106,8 +109,14 @@ export default function DocumentList() {
                       {document.errorMessage && (
                         <p className="mt-1 text-destructive text-xs">{document.errorMessage}</p>
                       )}
-                    </div>
-                    <div className="shrink-0">
+                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {isError && (
+                        <div className="flex items-center gap-1">
+                          <RetryDocumentButton documentId={document._id} />
+                          <DeleteDocumentButton documentId={document._id} onDelete={() => {}} />
+                        </div>
+                      )}
                       <div
                         className={cn(
                           'flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium text-xs',
@@ -119,7 +128,7 @@ export default function DocumentList() {
                       </div>
                     </div>
                   </div>
-                </button>
+                </div>
               )
             })}
           </div>
@@ -214,6 +223,36 @@ function DocumentActionButtons({ document, onDelete }: { document: Doc<'document
       </Button>
       <DeleteDocumentButton documentId={document._id} onDelete={onDelete} />
     </div>
+  )
+}
+
+function RetryDocumentButton({ documentId }: { documentId: Id<'document'> }) {
+  const retryDocumentParsing = useMutation(api.document.retryDocumentParsing)
+  const [isRetrying, setIsRetrying] = useState(false)
+
+  const handleRetry = async () => {
+    setIsRetrying(true)
+    try {
+      await retryDocumentParsing({ documentId })
+    } catch (error) {
+      console.error('Failed to retry document parsing:', error)
+    } finally {
+      setIsRetrying(false)
+    }
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="text-muted-foreground hover:text-foreground"
+      onClick={handleRetry}
+      disabled={isRetrying}
+      title="Retry parsing"
+    >
+      <RotateCw className={cn('size-4', isRetrying && 'animate-spin')} />
+      <span className="sr-only">Retry parsing</span>
+    </Button>
   )
 }
 
